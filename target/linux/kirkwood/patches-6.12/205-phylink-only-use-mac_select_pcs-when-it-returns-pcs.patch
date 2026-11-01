@@ -1,0 +1,29 @@
+From: LaCie Wireless Space port
+Subject: net: phylink: only call mac_select_pcs when the MAC uses it
+
+The pending PCS-list patches (737-02) call mac_select_pcs() whenever the
+MAC has the hook. DSA always has it and returns ERR_PTR(-EOPNOTSUPP) for
+switches without a PCS, e.g. the 88E6161: every user port then fails
+validation ("validation of gmii ... failed: -EOPNOTSUPP"). Check
+using_mac_select_pcs again, as upstream phylink does.
+
+--- a/drivers/net/phy/phylink.c	2026-10-25 21:40:09.874324237 +0200
++++ b/drivers/net/phy/phylink.c	2026-10-25 21:40:09.897963112 +0200
+@@ -714,7 +714,7 @@
+ 	mutex_lock(&pl->state_mutex);
+ 
+ 	/* Get the PCS for this interface mode */
+-	if (pl->mac_ops->mac_select_pcs) {
++	if (pl->using_mac_select_pcs) {
+ 		pcs = pl->mac_ops->mac_select_pcs(pl->config, state->interface);
+ 		if (IS_ERR(pcs)) {
+ 			mutex_unlock(&pl->state_mutex);
+@@ -1149,7 +1149,7 @@
+ 
+ 	mutex_lock(&pl->state_mutex);
+ 
+-	if (pl->mac_ops->mac_select_pcs) {
++	if (pl->using_mac_select_pcs) {
+ 		pcs = pl->mac_ops->mac_select_pcs(pl->config,
+ 						  interface);
+ 		pcs_found = !!pcs;

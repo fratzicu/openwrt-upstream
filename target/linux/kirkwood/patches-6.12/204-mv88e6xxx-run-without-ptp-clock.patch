@@ -1,0 +1,43 @@
+From: LaCie Wireless Space port
+Subject: net: dsa: mv88e6xxx: run without PTP if the TAI clock period is 0
+
+The 88E6161 rev 2 on the LaCie Wireless Space reads 0 from the TAI clock
+period register. mv88e6xxx_ptp_setup() then returns -ENODEV and the whole
+switch probe fails without a message. Disable PTP for that chip instead.
+
+--- a/drivers/net/dsa/mv88e6xxx/chip.c	2026-10-25 21:31:59.238092327 +0200
++++ b/drivers/net/dsa/mv88e6xxx/chip.c	2026-10-25 21:31:59.267600535 +0200
+@@ -4148,12 +4148,29 @@
+ 	/* Setup PTP Hardware Clock and timestamping */
+ 	if (chip->info->ptp_support) {
+ 		err = mv88e6xxx_ptp_setup(chip);
+-		if (err)
+-			goto unlock;
++		if (err == -ENODEV) {
++			struct mv88e6xxx_info *info;
+ 
+-		err = mv88e6xxx_hwtstamp_setup(chip);
+-		if (err)
++			/* Some 88E6161 report a TAI clock period of 0: run
++			 * the switch without PTP rather than failing probe.
++			 */
++			info = devm_kmemdup(chip->dev, chip->info,
++					    sizeof(*info), GFP_KERNEL);
++			if (!info) {
++				err = -ENOMEM;
++				goto unlock;
++			}
++			info->ptp_support = false;
++			chip->info = info;
++			dev_warn(chip->dev,
++				 "no usable PTP clock, timestamping disabled\n");
++		} else if (err) {
+ 			goto unlock;
++		} else {
++			err = mv88e6xxx_hwtstamp_setup(chip);
++			if (err)
++				goto unlock;
++		}
+ 	}
+ 
+ 	err = mv88e6xxx_stats_setup(chip);
