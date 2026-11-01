@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * LaCie Internet Space (Neil Poulton design), 88F5182, 64 MB RAM.
+ *
+ * The stock U-Boot (1.1.1, LaCie 1.3.4) calls the board
+ * "DB-88F5182-EDmini-V2": same board as the Ethernet Disk mini V2, so this
+ * only renames it and sets the root partition.
+ *
+ * The stock U-Boot has no FDT support: it loads the kernel raw from disk
+ * partition 6 (sda6) and passes ATAGs with root=/dev/sda7. The kernel
+ * ignores those ATAGs (ARM_ATAG_DTB_COMPAT off) and uses the bootargs
+ * below: squashfs root on sda1 with the overlay right behind it (fstools
+ * rootdisk), as on flash based devices. The old system on sda7 stays
+ * untouched as a fallback.
+ */
+
+#include "orion5x-lacie-ethernet-disk-mini-v2.dts"
+
+/ {
+	model = "LaCie Internet Space";
+	compatible = "lacie,internet-space", "lacie,ethernet-disk-mini-v2",
+		     "marvell,orion5x-88f5182", "marvell,orion5x";
+
+	aliases {
+		led-boot = "/gpio-leds/led-1";
+		led-failsafe = "/gpio-leds/led-1";
+		led-running = "/gpio-leds/led-1";
+		led-upgrade = "/gpio-leds/led-1";
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8 root=/dev/sda1 rootfstype=squashfs rootwait fstools_overlay_fstype=ext4";
+	};
+};

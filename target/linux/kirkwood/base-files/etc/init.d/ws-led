@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=01
+
+ws() {
+	[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ]
+}
+
+start() {
+	ws && /usr/sbin/ws-led ready
+}
+
+stop() {
+	ws && /usr/sbin/ws-led shutdown
+}

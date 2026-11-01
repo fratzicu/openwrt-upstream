@@ -1,0 +1,28 @@
+#!/bin/sh
+# LaCie Wireless Space: front light blue/green flickering while the WPS
+# push-button session that the next rc.wps script starts is running.
+# Always fails, so the real WPS scripts still run.
+
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ] || exit 1
+[ "$ACTION" = "released" ] || exit 1
+[ "$SEEN" -lt 3 ] || exit 1
+
+(
+	/usr/sbin/ws-led wps
+	sleep 2
+	# up to the 120 s of a WPS session, plus margin
+	i=0
+	while [ $i -lt 65 ]; do
+		active=0
+		for obj in $(ubus -S list 'hostapd.*'); do
+			ubus -S call "$obj" wps_status 2>/dev/null |
+				grep -q '"pbc_status":"Active"' && active=1
+		done
+		[ $active = 1 ] || break
+		sleep 2
+		i=$((i + 1))
+	done
+	/usr/sbin/ws-led ready
+) </dev/null >/dev/null 2>&1 &
+
+exit 1

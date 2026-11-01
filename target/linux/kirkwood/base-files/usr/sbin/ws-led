@@ -1,0 +1,97 @@
+#!/bin/sh
+# LaCie Wireless Space front light, as in the stock manual (1.8 Light Behavior):
+#
+#   ready     blue with Wi-Fi on, green with Wi-Fi off; the other colour
+#             flickers with disk access (blue+green, the LED has one colour
+#             per chip and the disk trigger only lights a LED)
+#   fault     red, no disk found
+#   shutdown  red
+#   upgrade   blue/green/red blinking
+#   touch     blue/green fast blinking while the touch button is held
+#             ("Sense cap has been pushed")
+#   hold      touch held 3 s: the colour Wi-Fi will get on release
+#             (green = it goes off, blue = it comes on)
+#   wps       blue/green blinking while a WPS push-button session runs
+#
+# Boot (blue fast blinking) and failsafe (red blinking) come from the
+# led-boot/led-failsafe aliases in the DTS through /etc/diag.sh.
+
+L=/sys/class/leds
+
+led() {	# led <name> <trigger> [brightness]
+	[ -d "$L/$1" ] || return 0
+	echo "$2" > "$L/$1/trigger"
+	[ -n "$3" ] && echo "$3" > "$L/$1/brightness"
+}
+
+disk_trigger() {	# libata trigger of the port that holds sda, e.g. ata2
+	readlink -f /sys/block/sda 2>/dev/null | grep -o '/ata[0-9][0-9]*/' | tr -d / | head -n 1
+}
+
+# Wi-Fi counts as on while a wireless interface exists (netifd removes
+# them when the radio or the last wifi-iface is disabled)
+wifi_up() {
+	local d
+	for d in /sys/class/net/*; do
+		[ -e "$d/phy80211" ] && return 0
+	done
+	return 1
+}
+
+case "$1" in
+ready)
+	led red:fault none 0
+	ata=$(disk_trigger)
+	if [ -z "$ata" ]; then
+		led blue:status none 0
+		led green:status none 0
+		led red:status none 1
+		exit 0
+	fi
+	led red:status none 0
+	if wifi_up; then
+		base=blue:status other=green:status
+	else
+		base=green:status other=blue:status
+	fi
+	led "$base" default-on
+	led "$other" "$ata"
+	;;
+fault|shutdown)
+	led blue:status none 0
+	led green:status none 0
+	led red:fault none 0
+	led red:status none 1
+	;;
+touch|wps)
+	led red:fault none 0
+	led red:status none 0
+	t=300
+	[ "$1" = touch ] && t=70
+	for l in blue:status green:status; do
+		led $l timer
+		echo $t > $L/$l/delay_on
+		echo $t > $L/$l/delay_off
+	done
+	;;
+hold)
+	led red:status none 0
+	if wifi_up; then
+		led green:status default-on
+		led blue:status none 0
+	else
+		led blue:status default-on
+		led green:status none 0
+	fi
+	;;
+upgrade)
+	led red:fault none 0
+	for l in red:status green:status blue:status; do
+		led $l timer
+	done
+	;;
+*)
+	echo "usage: $0 ready|fault|shutdown|upgrade|touch|hold|wps" >&2
+	exit 1
+	;;
+esac

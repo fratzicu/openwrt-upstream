@@ -1,0 +1,32 @@
+#!/bin/sh
+# LaCie Wireless Space: WPS button held 3 s or more switches Wi-Fi on/off,
+# as on the stock firmware (front light blue = on, green = off, set by
+# /etc/hotplug.d/net/50-ws-led). Saved, so it stays after a reboot.
+
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ] || exit 1
+[ "$ACTION" = "released" ] || exit 1
+[ "$SEEN" -ge 3 ] || exit 1
+
+. /lib/functions.sh
+
+radios=
+on=0
+check_radio() {
+	local disabled
+	config_get_bool disabled "$1" disabled 0
+	radios="$radios $1"
+	[ "$disabled" = 0 ] && on=1
+}
+config_load wireless
+config_foreach check_radio wifi-device
+[ -n "$radios" ] || exit 1
+
+if [ "$on" = 1 ]; then new=1 state=off; else new=0 state=on; fi
+for r in $radios; do
+	uci set wireless.$r.disabled=$new
+done
+uci commit wireless
+logger -t ws-wifi "WPS button held ${SEEN} s: Wi-Fi $state"
+wifi reload
+
+exit 0

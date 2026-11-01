@@ -9,7 +9,7 @@ BOARD:=kirkwood
 BOARDNAME:=Marvell Kirkwood
 FEATURES:=rtc usb nand squashfs ramdisk
 CPU_TYPE:=xscale
-SUBTARGETS:=generic
+SUBTARGETS:=generic orion5x
 
 KERNEL_PATCHVER:=6.12
 

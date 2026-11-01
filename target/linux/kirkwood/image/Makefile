@@ -128,6 +128,10 @@ define Device/Default
   IMAGE/factory.bin := append-ubi
 endef
 
+ifeq ($(SUBTARGET),orion5x)
+include orion5x.mk
+else
+
 define Device/checkpoint_l-50
   DEVICE_VENDOR := Check Point
   DEVICE_MODEL := L-50
@@ -283,6 +287,17 @@ define Device/iptime_nas1
 endef
 TARGET_DEVICES += iptime_nas1
 
+# Needs the ported mainline U-Boot (wireless_space): kernel and rootfs in UBI
+define Device/lacie_wireless-space
+  DEVICE_VENDOR := LaCie
+  DEVICE_MODEL := Wireless Space
+  DEVICE_PACKAGES := kmod-ata-marvell-sata kmod-fs-ext4 kmod-dsa-mv88e6xxx \
+	kmod-gpio-button-hotplug kmod-rtc-mv kmod-hwmon-drivetemp kmod-hwmon-gpiofan \
+	kmod-usb-storage block-mount e2fsprogs kmod-eeprom-at24 \
+	kmod-ath9k kmod-rt2800-pci wpad-mbedtls
+endef
+TARGET_DEVICES += lacie_wireless-space
+
 define Device/linksys
   $(Device/kernel-size-migration-linksys)
   DEVICE_VENDOR := Linksys
@@ -412,5 +427,7 @@ define Device/zyxel_nsa325
   SUPPORTED_DEVICES += nsa325
 endef
 TARGET_DEVICES += zyxel_nsa325
+
+endif
 
 $(eval $(call BuildImage))

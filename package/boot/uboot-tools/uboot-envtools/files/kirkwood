@@ -30,6 +30,9 @@ zyxel,nsa310s|\
 zyxel,nsa325)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000"
 	;;
+lacie,wireless-space)
+	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000" "2"
+	;;
 linksys,ea3500)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x4000" "0x4000"
 	;;

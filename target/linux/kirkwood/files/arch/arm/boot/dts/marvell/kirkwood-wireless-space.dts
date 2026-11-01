@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: (GPL-2.0-or-later OR MIT)
+/*
+ * LaCie Wireless Space (board ASTON_WS_GN3, Marvell 88F6281, 256 MiB, 128 MiB NAND)
+ *
+ * GPIO/MPP map taken from the U-Boot board file removed in U-Boot commit
+ * b352182a00 ("arm: Remove wireless_space board").
+ *
+ * Booted by the ported mainline U-Boot (board "wireless_space"), which loads
+ * the "kernel" volume from UBI. The stock LaCie firmware is replaced; NAND
+ * layout matches U-Boot's mtdparts:
+ *   0x000000 768 KiB u-boot, 0x0c0000 256 KiB u-boot-env, 0x100000 ubi
+ */
+
+/dts-v1/;
+
+#include "kirkwood.dtsi"
+#include "kirkwood-6281.dtsi"
+#include <dt-bindings/leds/common.h>
+
+/ {
+	model = "LaCie Wireless Space";
+	compatible = "lacie,wireless-space", "marvell,kirkwood-88f6281", "marvell,kirkwood";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x10000000>;
+	};
+
+	aliases {
+		serial0 = &uart0;
+		led-boot = &led_blue;
+		led-failsafe = &led_red;
+		led-running = &led_blue;
+		led-upgrade = &led_green;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8 earlyprintk";
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "Rear Button";
+			linux,code = <KEY_RESTART>;
+			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+		};
+
+		wps {
+			label = "WPS Button";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&gpio1 11 GPIO_ACTIVE_LOW>;	/* MPP43 */
+		};
+	};
+
+	/*
+	 * Front light: one RGB LED (common anode, connector J15) behind a
+	 * latch. The stock kernel sets the data lines, then clocks MPP42
+	 * low and back high; the outputs hold while MPP42 stays high
+	 * (checked on the hardware), so MPP42 is an active-low clock here.
+	 * MPP45 low makes the red LED blink in hardware (about 5 Hz).
+	 * MPP47 low switches the blue LED to a disk activity input that
+	 * stays dark with OpenWrt, so it is kept high.
+	 */
+	front_latch: gpio-latch {
+		compatible = "gpio-latch";
+		gpio-controller;
+		#gpio-cells = <2>;
+		setup-duration-ns = <1000>;
+		clock-duration-ns = <1000>;
+
+		clk-gpios = <&gpio1 10 GPIO_ACTIVE_LOW>;	/* MPP42 */
+		latched-gpios = <&gpio1 12 GPIO_ACTIVE_HIGH>,	/* MPP44 red */
+				<&gpio1 13 GPIO_ACTIVE_LOW>,	/* MPP45 red blink */
+				<&gpio1 14 GPIO_ACTIVE_HIGH>,	/* MPP46 green */
+				<&gpio1 15 GPIO_ACTIVE_LOW>,	/* MPP47 disk blink */
+				<&gpio1 16 GPIO_ACTIVE_HIGH>;	/* MPP48 blue */
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_red: led-0 {
+			function = LED_FUNCTION_STATUS;
+			color = <LED_COLOR_ID_RED>;
+			gpios = <&front_latch 0 GPIO_ACTIVE_HIGH>;
+		};
+
+		/* hardware blink of the red LED (only visible with red on) */
+		led-1 {
+			function = LED_FUNCTION_FAULT;
+			color = <LED_COLOR_ID_RED>;
+			gpios = <&front_latch 1 GPIO_ACTIVE_HIGH>;
+		};
+
+		led_green: led-2 {
+			function = LED_FUNCTION_STATUS;
+			color = <LED_COLOR_ID_GREEN>;
+			gpios = <&front_latch 2 GPIO_ACTIVE_HIGH>;
+		};
+
+		led_blue: led-4 {
+			function = LED_FUNCTION_STATUS;
+			color = <LED_COLOR_ID_BLUE>;
+			gpios = <&front_latch 4 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	/*
+	 * Fan, from the stock kernel's gpio-fan platform data: 3 speed bits
+	 * (MPP37 = bit 0, MPP7 = bit 1, MPP36 = bit 2, active low), power on
+	 * MPP38 (bit 3 here), MPP39 high while the fan turns. The RPM values
+	 * are the stock table for speed 0..7.
+	 */
+	fan {
+		compatible = "gpio-fan";
+		gpios = <&gpio1 5 GPIO_ACTIVE_LOW>,	/* MPP37 */
+			<&gpio0 7 GPIO_ACTIVE_LOW>,	/* MPP7 */
+			<&gpio1 4 GPIO_ACTIVE_LOW>,	/* MPP36 */
+			<&gpio1 6 GPIO_ACTIVE_HIGH>;	/* MPP38 */
+		gpio-fan,speed-map = <0 0>, <1220 8>, <1325 9>, <1700 10>,
+				     <2000 11>, <3200 12>, <3800 13>,
+				     <4900 14>, <5400 15>;
+		alarm-gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;	/* MPP39 */
+		#cooling-cells = <2>;
+	};
+
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		sata0_power: regulator@1 {
+			compatible = "regulator-fixed";
+			reg = <1>;
+			regulator-name = "SATA0 Power";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			enable-active-high;
+			regulator-always-on;
+			regulator-boot-on;
+			gpio = <&gpio0 16 GPIO_ACTIVE_HIGH>;
+		};
+
+		usb_power: regulator@2 {
+			compatible = "regulator-fixed";
+			reg = <2>;
+			regulator-name = "USB VBUS";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			enable-active-high;
+			regulator-always-on;
+			regulator-boot-on;
+			gpio = <&gpio1 9 GPIO_ACTIVE_HIGH>;	/* MPP41 */
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	/* LaCie layout: be16 version (1..3) at 0, Ethernet MAC at 2 */
+	eeprom@50 {
+		compatible = "atmel,24c02";
+		reg = <0x50>;
+		read-only;
+	};
+};
+
+&rtc {
+	status = "okay";
+};
+
+&sata {
+	status = "okay";
+	nr-ports = <2>;
+};
+
+&usb0 {
+	status = "okay";
+};
+
+&pciec {
+	status = "okay";
+};
+
+&pcie0 {
+	/* mini-PCIe Wi-Fi card */
+	status = "okay";
+};
+
+&nand {
+	status = "okay";
+	chip-delay = <40>;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "u-boot";
+			reg = <0x0000000 0x00c0000>;
+			read-only;
+		};
+
+		partition@c0000 {
+			label = "u-boot-env";
+			reg = <0x00c0000 0x0040000>;
+		};
+
+		partition@100000 {
+			label = "ubi";
+			reg = <0x0100000 0x7f00000>;
+		};
+	};
+};
+
+&mdio {
+	status = "okay";
+
+	/*
+	 * 88E6161 (or 88E6131, the stock kernel knows both) on GE0, CPU port 5,
+	 * strapped in multi-chip addressing mode at SMI address 0xa (U-Boot used
+	 * CONFIG_MV88E61XX_MULTICHIP_ADRMODE with PHY_BASE_ADR 0xa).
+	 * Port 4 uses internal PHY 6 (from the former U-Boot switch driver).
+	 * Sockets checked on the hardware: case LAN1 = port 2, LAN2 = port 1,
+	 * LAN3 = port 0, WAN = port 4. Port 3 has no socket.
+	 */
+	switch@a {
+		compatible = "marvell,mv88e6085";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0xa>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				label = "lan3";
+				phy-handle = <&swphy0>;
+			};
+
+			port@1 {
+				reg = <1>;
+				label = "lan2";
+				phy-handle = <&swphy1>;
+			};
+
+			port@2 {
+				reg = <2>;
+				label = "lan1";
+				phy-handle = <&swphy2>;
+			};
+
+			port@4 {
+				reg = <4>;
+				label = "wan";
+				phy-handle = <&swphy6>;
+			};
+
+			port@5 {
+				reg = <5>;
+				phy-mode = "rgmii-id";
+				ethernet = <&eth0port>;
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
+			};
+		};
+
+		/*
+		 * PHY setup (checked on the hardware), port 3 has no socket:
+		 * - page 0 reg 16 bits 9:8 = 0: energy-detect power-down off.
+		 *   With it on, the link to a "green" switch never comes back
+		 *   after preinit takes the port down; both ends stay asleep.
+		 * - page 3 reg 16 = 0x1777, the PHY reset default, which the
+		 *   marvell driver replaces with 0x0030: right LED green at
+		 *   1000 Mbit (LED[0]) / orange at 100 Mbit (LED[1]), left LED
+		 *   on with link, blinking with activity (LED[3]).
+		 *   The wan socket has no green wired (LED[0] and LED[2] light
+		 *   nothing), so wan uses 0x1767: LED[1] mode 6 = right LED
+		 *   orange with link at 100 and 1000 Mbit.
+		 * - page 0 reg 0 bit 15: soft reset, so the EDPD change is applied.
+		 */
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			swphy0: ethernet-phy@0 {
+				reg = <0>;
+				marvell,reg-init = <0 0x10 0xfcff 0>, <3 0x10 0 0x1777>,
+						   <0 0x00 0xffff 0x8000>;
+			};
+
+			swphy1: ethernet-phy@1 {
+				reg = <1>;
+				marvell,reg-init = <0 0x10 0xfcff 0>, <3 0x10 0 0x1777>,
+						   <0 0x00 0xffff 0x8000>;
+			};
+
+			swphy2: ethernet-phy@2 {
+				reg = <2>;
+				marvell,reg-init = <0 0x10 0xfcff 0>, <3 0x10 0 0x1777>,
+						   <0 0x00 0xffff 0x8000>;
+			};
+
+			swphy6: ethernet-phy@6 {
+				reg = <6>;
+				marvell,reg-init = <0 0x10 0xfcff 0>, <3 0x10 0 0x1767>,
+						   <0 0x00 0xffff 0x8000>;
+			};
+		};
+	};
+};
+
+&eth0 {
+	status = "okay";
+
+	ethernet0-port@0 {
+		speed = <1000>;
+		duplex = <1>;
+		phy-mode = "rgmii";
+	};
+};

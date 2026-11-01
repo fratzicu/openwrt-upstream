@@ -37,13 +37,35 @@ platform_do_upgrade() {
 	iptime,nas1)
 		default_do_upgrade "$1"
 		;;
+	lacie,internet-space)
+		# stock U-Boot loads the kernel raw from sda6, root is squashfs on
+		# sda1 with the overlay behind it (fstools rootdisk)
+		export EMMC_KERN_DEV=/dev/sda6
+		export EMMC_ROOT_DEV=/dev/sda1
+		emmc_do_upgrade "$1"
+		;;
 	linksys,e4200-v2|\
 	linksys,ea3500|\
 	linksys,ea4500)
 		platform_do_upgrade_linksys "$1"
 		;;
+	lacie,wireless-space)
+		# front light blue/green/red blinking, as the stock firmware
+		for led in red:status green:status blue:status; do
+			echo timer > /sys/class/leds/$led/trigger
+		done
+		nand_do_upgrade "$1"
+		;;
 	*)
 		nand_do_upgrade "$1"
+		;;
+	esac
+}
+
+platform_copy_config() {
+	case "$(board_name)" in
+	lacie,internet-space)
+		emmc_copy_config
 		;;
 	esac
 }

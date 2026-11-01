@@ -4,6 +4,15 @@ START=99
 
 boot() {
 	case $(board_name) in
+	lacie,wireless-space)
+		# U-Boot counts boots only while upgrade_available=1 (set when
+		# flashing); this boot worked, so stop counting
+		[ "$(fw_printenv -n upgrade_available 2>/dev/null)" = "1" ] && \
+			fw_setenv -s - <<-EOF
+				upgrade_available 0
+				bootcount 0
+			EOF
+		;;
 	linksys,e4200-v2|\
 	linksys,ea3500|\
 	linksys,ea4500)

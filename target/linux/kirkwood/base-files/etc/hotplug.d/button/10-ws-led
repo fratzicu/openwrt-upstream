@@ -1,0 +1,23 @@
+# LaCie Wireless Space: feedback while the front touch button (wps) is held:
+# blue/green fast blinking, after 3 s the colour Wi-Fi will get when it is
+# released (rc.wps/45-ws-wifi). What happens on release is up to rc.wps.
+
+[ "$BUTTON" = wps ] || exit 0
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ] || exit 0
+
+T=/tmp/ws-touch
+
+case "$ACTION" in
+pressed)
+	id=$$
+	echo $id > $T
+	/usr/sbin/ws-led touch
+	(
+		sleep 3
+		[ "$(cat $T 2>/dev/null)" = "$id" ] && /usr/sbin/ws-led hold
+	) </dev/null >/dev/null 2>&1 &
+	;;
+released)
+	rm -f $T
+	;;
+esac

@@ -1,0 +1,13 @@
+# LaCie Wireless Space: front light blue with Wi-Fi on, green with it off
+
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ] || exit 0
+[ "$DEVTYPE" = wlan ] || exit 0
+case "$ACTION" in
+add|remove) ;;
+*) exit 0 ;;
+esac
+
+# only while running normally, not during boot or shutdown
+[ -e /etc/rc.d/S99ws-led ] && [ "$(cat /sys/class/leds/red:status/brightness 2>/dev/null)" = 0 ] &&
+	/usr/sbin/ws-led ready
+exit 0
