@@ -294,7 +294,12 @@ define Device/lacie_wireless-space
   DEVICE_PACKAGES := kmod-ata-marvell-sata kmod-fs-ext4 kmod-dsa-mv88e6xxx \
 	kmod-gpio-button-hotplug kmod-rtc-mv kmod-hwmon-drivetemp kmod-hwmon-gpiofan \
 	kmod-usb-storage block-mount e2fsprogs kmod-eeprom-at24 \
-	kmod-ath9k kmod-rt2800-pci wpad-mbedtls
+	kmod-ath9k kmod-rt2800-pci wpad-mbedtls luci-app-disk-init \
+	kmod-fs-xfs xfs-mkfs kmod-fs-btrfs btrfs-progs kmod-fs-f2fs mkf2fs \
+	kmod-fs-exfat exfat-mkfs kmod-fs-vfat dosfstools kmod-fs-ntfs3 ntfs-3g-utils \
+	kmod-nls-cp437 kmod-nls-iso8859-1 kmod-nls-utf8 vsftpd nfs-kernel-server \
+	kmod-ledtrig-activity kmod-ledtrig-pattern kmod-ledtrig-oneshot \
+	kmod-ledtrig-transient kmod-usb-ledtrig-usbport
 endef
 TARGET_DEVICES += lacie_wireless-space
 

@@ -2,15 +2,26 @@
 
 START=99
 STOP=01
+USE_PROCD=1
 
 ws() {
 	[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = "lacie,wireless-space" ]
 }
 
-start() {
+start_service() {
 	ws && /usr/sbin/ws-led ready
 }
 
-stop() {
+# LED entries changed in /etc/config/system (System > LED Configuration);
+# its own trigger, as ucitrack runs only one script per config change
+reload_service() {
+	start_service
+}
+
+service_triggers() {
+	procd_add_reload_trigger system
+}
+
+stop_service() {
 	ws && /usr/sbin/ws-led shutdown
 }

@@ -15,11 +15,21 @@
 #
 # Boot (blue fast blinking) and failsafe (red blinking) come from the
 # led-boot/led-failsafe aliases in the DTS through /etc/diag.sh.
+#
+# A colour that has its own LED entry in /etc/config/system (System > LED
+# Configuration in LuCI) is left to that entry, except for shutdown and
+# upgrade; deleting the entry gives it back to this scheme.
 
 L=/sys/class/leds
 
+case "$1" in
+shutdown|upgrade) USER_LEDS= ;;
+*) USER_LEDS=" $(uci -q show system | sed -n "s/^system\..*\.sysfs='\(.*\)'$/\1/p" | tr '\n' ' ')" ;;
+esac
+
 led() {	# led <name> <trigger> [brightness]
 	[ -d "$L/$1" ] || return 0
+	case "$USER_LEDS" in *" $1 "*) return 0 ;; esac
 	echo "$2" > "$L/$1/trigger"
 	[ -n "$3" ] && echo "$3" > "$L/$1/brightness"
 }
@@ -69,6 +79,7 @@ touch|wps)
 	t=300
 	[ "$1" = touch ] && t=70
 	for l in blue:status green:status; do
+		case "$USER_LEDS" in *" $l "*) continue ;; esac
 		led $l timer
 		echo $t > $L/$l/delay_on
 		echo $t > $L/$l/delay_off
