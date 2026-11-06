@@ -1,0 +1,13 @@
+{
+	"admin/system/disk-init": {
+		"title": "Storage",
+		"order": 45,
+		"action": {
+			"type": "view",
+			"path": "system/disk-init"
+		},
+		"depends": {
+			"acl": [ "luci-app-disk-init" ]
+		}
+	}
+}

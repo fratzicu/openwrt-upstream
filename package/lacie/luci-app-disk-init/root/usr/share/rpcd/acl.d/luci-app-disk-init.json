@@ -1,0 +1,15 @@
+{
+	"luci-app-disk-init": {
+		"description": "Grant access to the Storage page (format disks, sharing, SMB and FTP users)",
+		"read": {
+			"ubus": {
+				"disk-init": [ "status", "shares" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"disk-init": [ "init", "set_share", "set_user" ]
+			}
+		}
+	}
+}

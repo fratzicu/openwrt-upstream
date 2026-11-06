@@ -1,0 +1,197 @@
+#!/bin/sh
+# disk-init <disk> <name> <fstype>
+#
+# Erase <disk> (e.g. sda) and set it up for storage: one GPT partition with a
+# <fstype> file system labelled <name>, mounted at /mnt/<name> by UUID
+# (fstab). Shares (SMB, NFS, anonymous FTP) of the disk's old mount points
+# are removed; sharing the new folder is done afterwards on the Storage page.
+#
+# fstype: ext4 xfs btrfs f2fs exfat vfat ntfs (see "disk-init fstypes")
+
+GUID_LINUX=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+GUID_MSDATA=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
+
+# fstype  mkfs tool  kernel fs  label length
+FSTYPES='ext4 mkfs.ext4 ext4 16
+xfs mkfs.xfs xfs 12
+btrfs mkfs.btrfs btrfs 16
+f2fs mkfs.f2fs f2fs 16
+exfat mkfs.exfat exfat 15
+vfat mkfs.fat vfat 11
+ntfs mkntfs ntfs3 16'
+
+fs_supported() {	# fs_supported <kernel fs>
+	grep -q -w "$1" /proc/filesystems ||
+		[ -n "$(find /lib/modules/$(uname -r) -name "$1.ko" 2>/dev/null)" ]
+}
+
+if [ "$1" = fstypes ]; then
+	echo "$FSTYPES" | while read -r t tool kfs len; do
+		command -v $tool >/dev/null && fs_supported $kfs && echo $t
+	done
+	exit 0
+fi
+
+disk=$1
+label=$2
+fstype=${3:-ext4}
+dev=/dev/$disk
+part=${dev}1
+mnt=/mnt/$label
+
+say() { echo "$(date +%T) $*"; }
+fail() { say "ERROR: $*"; exit 1; }
+
+case "$disk" in sd[a-z]) ;; *) fail "invalid disk '$disk'" ;; esac
+echo "$label" | grep -q -E '^[A-Za-z0-9_-]{1,16}$' || fail "invalid name '$label'"
+set -- $(echo "$FSTYPES" | grep "^$fstype ")
+[ -n "$1" ] || fail "unknown file system '$fstype'"
+tool=$2 kfs=$3 len=$4
+command -v $tool >/dev/null || fail "$tool is not installed"
+fs_supported $kfs || fail "the kernel has no $kfs support"
+[ -b "$dev" ] || fail "$dev not found"
+grep -q -E "^$dev[0-9]* /(overlay|rom)? " /proc/mounts &&
+	fail "$dev holds the root or overlay file system"
+grep -q " $mnt " /proc/mounts && ! grep -q "^$dev[0-9]* $mnt " /proc/mounts &&
+	fail "$mnt is used by another disk, choose another name"
+
+. /lib/functions.sh
+
+old_uuids=
+for p in $(ls -d /sys/block/$disk/${disk}* 2>/dev/null); do
+	u=$(block info /dev/${p##*/} 2>/dev/null | sed -n 's/.* UUID="\([^"]*\)".*/\1/p')
+	[ -n "$u" ] && old_uuids="$old_uuids $u"
+done
+old_mounts=$(awk -v d="$dev" 'index($1, d) == 1 { print $2 }' /proc/mounts)
+
+say "Stopping the file sharing services"
+restart=
+for s in ksmbd vsftpd nfsd; do
+	[ -x /etc/init.d/$s ] && /etc/init.d/$s running 2>/dev/null || continue
+	/etc/init.d/$s stop
+	restart="$restart $s"
+done
+
+for p in $(awk -v d="$dev" 'index($1, d) == 1 { print $1 }' /proc/swaps); do
+	say "Turning off swap on $p"
+	swapoff "$p" || fail "cannot turn off swap on $p"
+done
+for m in $old_mounts; do
+	say "Unmounting $m"
+	umount "$m" || fail "$m is busy, stop what uses it and try again"
+done
+
+under() {	# under <path>: is <path> one of the old mount points or inside one?
+	local m
+	for m in $old_mounts $mnt; do
+		case "$1" in "$m"|"$m"/*) return 0 ;; esac
+	done
+	return 1
+}
+
+# fstab entries that point at the old partitions
+drop_mount() {
+	local uuid device target u
+	config_get uuid "$1" uuid
+	config_get device "$1" device
+	config_get target "$1" target
+	for u in $old_uuids; do
+		[ "$uuid" = "$u" ] && { uci delete fstab."$1"; return; }
+	done
+	case "$device" in $dev*) uci delete fstab."$1"; return ;; esac
+	[ -n "$target" ] && under "$target" && uci delete fstab."$1"
+}
+config_load fstab
+config_foreach drop_mount mount
+
+# SMB shares
+drop_share() {
+	local path
+	config_get path "$1" path
+	under "$path" && uci delete ksmbd."$1"
+}
+if [ -e /etc/config/ksmbd ]; then
+	config_load ksmbd
+	config_foreach drop_share share
+	uci commit ksmbd
+fi
+
+# NFS exports
+if [ -e /etc/exports ]; then
+	while read -r path rest; do
+		under "$path" && say "Removing NFS export $path"
+	done < /etc/exports
+	awk -v list="$old_mounts $mnt" '
+		BEGIN { n = split(list, m, " ") }
+		{ for (i = 1; i <= n; i++)
+			if ($1 == m[i] || index($1, m[i] "/") == 1) next
+		  print }' /etc/exports > /etc/exports.new && mv /etc/exports.new /etc/exports
+fi
+
+# anonymous FTP folder
+if [ -e /etc/vsftpd.conf ]; then
+	anon=$(sed -n 's/^anon_root=//p' /etc/vsftpd.conf)
+	if [ -n "$anon" ] && under "$anon"; then
+		say "Turning off anonymous FTP"
+		sed -i -e 's/^anonymous_enable=.*/anonymous_enable=NO/' -e '/^anon_root=/d' /etc/vsftpd.conf
+	fi
+fi
+
+case "$fstype" in exfat|vfat|ntfs) guid=$GUID_MSDATA ;; *) guid=$GUID_LINUX ;; esac
+say "Writing a new GPT partition table to $dev"
+printf 'label: gpt\n,,%s\n' $guid |
+	sfdisk -q --wipe always --wipe-partitions always "$dev" >/dev/null ||
+	fail "sfdisk failed"
+sleep 2
+i=0
+while [ ! -b "$part" ] && [ $i -lt 20 ]; do sleep 1; i=$((i + 1)); done
+[ -b "$part" ] || fail "$part did not appear"
+
+fslabel=$(echo "$label" | cut -c1-$len)
+options=
+say "Formatting $part as $fstype (label $fslabel), this can take a few minutes"
+case "$fstype" in
+ext4)	mkfs.ext4 -F -q -L "$fslabel" -m 1 "$part" ;;
+xfs)	mkfs.xfs -f -q -L "$fslabel" "$part" ;;
+btrfs)	mkfs.btrfs -f -q -L "$fslabel" "$part" >/dev/null ;;
+f2fs)	mkfs.f2fs -f -q -l "$fslabel" "$part" ;;
+exfat)	mkfs.exfat -L "$fslabel" "$part" >/dev/null; options=umask=0000 ;;
+vfat)	fslabel=$(echo "$fslabel" | tr a-z A-Z)
+	mkfs.fat -F 32 -n "$fslabel" "$part" >/dev/null
+	options=umask=0000,utf8 ;;
+ntfs)	mkntfs -f -q -L "$fslabel" "$part"; options=umask=0000 ;;
+esac || fail "formatting failed"
+
+i=0
+uuid=
+while [ -z "$uuid" ] && [ $i -lt 10 ]; do
+	uuid=$(block info "$part" | sed -n 's/.* UUID="\([^"]*\)".*/\1/p')
+	[ -n "$uuid" ] || { sleep 1; i=$((i + 1)); }
+done
+[ -n "$uuid" ] || fail "no UUID on $part"
+
+say "Mounting at $mnt (UUID $uuid)"
+s=$(uci add fstab mount)
+uci set fstab.$s.uuid="$uuid"
+uci set fstab.$s.target="$mnt"
+[ -n "$options" ] && uci set fstab.$s.options="$options"
+uci set fstab.$s.enabled=1
+uci commit fstab || fail "cannot save fstab"
+mkdir -p "$mnt"
+block mount
+grep -q " $mnt " /proc/mounts || fail "$mnt is not mounted"
+chmod 0777 "$mnt" 2>/dev/null
+
+# FTP users whose folder is gone go back to all disks
+for f in /etc/vsftpd/users/*; do
+	[ -f "$f" ] || continue
+	r=$(sed -n 's/^local_root=//p' "$f")
+	[ -z "$r" ] || [ -d "$r" ] || sed -i 's,^local_root=.*,local_root=/mnt,' "$f"
+done
+
+for s in $restart; do
+	/etc/init.d/$s start
+done
+
+say "Done: $part ($fstype, $fslabel) mounted at $mnt"
+say "Share it under Shared folders below."
